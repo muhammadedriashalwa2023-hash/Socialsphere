@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terumbu Karang Voxel 3D - Dioptimasi (Fixed Bounding Box)</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: transparent; 
+        }
+        #canvas-container { 
+            width: 100vw; 
+            height: 100vh; 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // 1. SETUP SCENE
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+        // 2. RENDERER 
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true, 
+            alpha: true,
+            powerPreference: "high-performance"
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        renderer.setClearColor(0x000000, 0); 
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // 3. KONTROL KAMERA 
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        
+        controls.enableZoom = false;   
+        controls.enablePan = false;    
+        controls.enableRotate = false; 
+
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = -2.1; 
+        controls.target.set(0, 4, 0); // Titik fokus diturunkan sedikit ke tengah
+
+        // 4. PENCAHAYAAN 
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        sunLight.position.set(20, 40, 20);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 1024;
+        sunLight.shadow.mapSize.height = 1024;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 100;
+        sunLight.shadow.camera.left = -25;
+        sunLight.shadow.camera.right = 25;
+        sunLight.shadow.camera.top = 25;
+        sunLight.shadow.camera.bottom = -25;
+        scene.add(sunLight);
+
+        // 5. SETUP INSTANCED MESH
+        const voxelGeo = new THREE.BoxGeometry(1, 1, 1);
+        const maxInstances = 20000; 
+        
+        const matConfigs = {
+            sand:         { color: 0xe3d3ab, castShadow: false, receiveShadow: true },
+            rock:         { color: 0x636e72, castShadow: true, receiveShadow: true },
+            brainCoral:   { color: 0xe84393, castShadow: true, receiveShadow: true },
+            tableCoral:   { color: 0x0984e3, castShadow: true, receiveShadow: true },
+            branchCoral1: { color: 0x00b894, castShadow: true, receiveShadow: true },
+            branchCoral2: { color: 0xfdcB6E, castShadow: true, receiveShadow: true }
+        };
+
+        const instancedMeshes = {};
+        const counters = {};
+        const dummy = new THREE.Object3D();
+        const occupiedPositions = new Set(); 
+
+        // BATAS ABSOLUT AREA (Strict Bounding Box)
+        const areaSize = 24; 
+        const minBound = -12;
+        const maxBound = 11;
+        const minY = -4; 
+        const maxY = 14; 
+
+        for (const [key, config] of Object.entries(matConfigs)) {
+            const material = new THREE.MeshLambertMaterial({ color: config.color });
+            const mesh = new THREE.InstancedMesh(voxelGeo, material, maxInstances);
+            mesh.castShadow = config.castShadow;
+            mesh.receiveShadow = config.receiveShadow;
+            scene.add(mesh);
+            instancedMeshes[key] = mesh;
+            counters[key] = 0;
+        }
+
+        function addVoxel(x, y, z, type) {
+            // FILTER SISI STRICT: Memotong semua blok yang melewati koordinat X, Y, Z
+            if (x < minBound || x > maxBound || z < minBound || z > maxBound || y < minY || y > maxY) return;
+
+            const posKey = `${x},${y},${z}`;
+            if (occupiedPositions.has(posKey)) return;
+            
+            const index = counters[type];
+            if (index >= maxInstances) return; 
+
+            occupiedPositions.add(posKey);
+            dummy.position.set(x, y, z);
+            dummy.updateMatrix();
+            instancedMeshes[type].setMatrixAt(index, dummy.matrix);
+            counters[type]++;
+        }
+
+        // 6. ALGORITMA BENTUK TERUMBU KARANG
+        function buildBrainCoral(cx, cy, cz, type) {
+            const radius = 2 + Math.floor(Math.random() * 2); 
+            for(let x = -radius; x <= radius; x++) {
+                for(let y = 0; y <= radius; y++) {
+                    for(let z = -radius; z <= radius; z++) {
+                        if(x*x + y*y + z*z <= radius*radius) {
+                            if(Math.random() > 0.1) addVoxel(cx+x, cy+y, cz+z, type);
+                        }
+                    }
+                }
+            }
+        }
+
+        function buildTableCoral(cx, cy, cz, type) {
+            const height = 3 + Math.floor(Math.random() * 3);
+            const radius = 3 + Math.floor(Math.random() * 3);
+            
+            for(let y = 0; y < height; y++) {
+                addVoxel(cx, cy+y, cz, type);
+                addVoxel(cx+1, cy+y, cz, type);
+                addVoxel(cx, cy+y, cz+1, type);
+                addVoxel(cx+1, cy+y, cz+1, type);
+            }
+            
+            const topY = cy + height;
+            for(let x = -radius; x <= radius; x++) {
+                for(let z = -radius; z <= radius; z++) {
+                    if(x*x + z*z <= radius*radius) {
+                        if(Math.random() > 0.2) addVoxel(cx+x, topY, cz+z, type);
+                        if(Math.random() > 0.7) addVoxel(cx+x, topY-1, cz+z, type);
+                    }
+                }
+            }
+        }
+
+        function buildBranchingCoral(cx, cy, cz, type) {
+            const numBranches = 4 + Math.floor(Math.random() * 4); 
+            
+            for(let i = 0; i < numBranches; i++) {
+                let bx = cx, by = cy, bz = cz;
+                let dirX = (Math.random() - 0.5) * 1.5; 
+                let dirZ = (Math.random() - 0.5) * 1.5;
+                const length = 4 + Math.floor(Math.random() * 5);
+                
+                for(let l = 0; l < length; l++) {
+                    addVoxel(Math.round(bx), Math.round(by), Math.round(bz), type);
+                    if(l < length / 2) {
+                        addVoxel(Math.round(bx)+1, Math.round(by), Math.round(bz), type);
+                        addVoxel(Math.round(bx), Math.round(by), Math.round(bz)+1, type);
+                    }
+                    bx += dirX;
+                    by += 1; 
+                    bz += dirZ;
+                }
+            }
+        }
+
+        // 7. GENERATE LINGKUNGAN LAUT
+        for (let x = minBound; x <= maxBound; x++) {
+            for (let z = minBound; z <= maxBound; z++) {
+                let groundHeight = Math.floor(Math.sin(x/4) * 1.5 + Math.cos(z/4) * 1.5);
+                
+                for (let y = minY; y <= groundHeight; y++) {
+                     addVoxel(x, y, z, 'sand');
+                }
+
+                if (Math.random() > 0.95) {
+                    const rockHeight = 1 + Math.floor(Math.random() * 3);
+                    for(let ry = 1; ry <= rockHeight; ry++) addVoxel(x, groundHeight + ry, z, 'rock');
+                    
+                    if(Math.random() > 0.4) {
+                        const rand = Math.random();
+                        const cy = groundHeight + rockHeight + 1;
+                        if(rand < 0.3) buildBrainCoral(x, cy, z, 'brainCoral');
+                        else if(rand < 0.6) buildTableCoral(x, cy, z, 'tableCoral');
+                        else if(rand < 0.8) buildBranchingCoral(x, cy, z, 'branchCoral1');
+                        else buildBranchingCoral(x, cy, z, 'branchCoral2');
+                    }
+                }
+            }
+        }
+
+        // MENGHAPUS GLITCH: Mengatur jumlah mesh agar sisa block yang tidak terpakai dibuang
+        for (const key in instancedMeshes) {
+            instancedMeshes[key].count = counters[key]; 
+            instancedMeshes[key].instanceMatrix.needsUpdate = true;
+        }
+
+        // 8. EFEK KUBUS AIR LAUT (Anti Z-Fighting & Anti Protruding)
+        // Ukuran dilebihkan sebesar 0.2 agar menutupi tepi blok sepenuhnya layaknya kotak kaca
+        const waterGeo = new THREE.BoxGeometry(24.2, 20, 24.2);
+        const waterMat = new THREE.MeshLambertMaterial({
+            color: 0x0984e3,
+            transparent: true,
+            opacity: 0.25,
+            side: THREE.FrontSide, 
+            depthWrite: false 
+        });
+        const water = new THREE.Mesh(waterGeo, waterMat);
+        
+        // Posisi Y diturunkan ke 5.4 agar bagian bawah air menyelimuti pasir paling bawah (-4)
+        water.position.set(-0.5, 5.4, -0.5); 
+        scene.add(water);
+
+        // 9. RESPONSIVE WINDOW & CAMERA FOV ZOOM 
+        function adjustCamera() {
+            const aspect = window.innerWidth / window.innerHeight;
+            
+            if (aspect < 0.6) { 
+                // Layar Potret Sempit (Smartphone modern)
+                camera.fov = 95;
+                camera.position.set(45, 38, 45); 
+            } else if (aspect < 1) { 
+                // Layar Potret Lebar / Tablet
+                camera.fov = 75;
+                camera.position.set(40, 32, 40); 
+            } else { 
+                // Layar Lanskap Desktop
+                camera.fov = 50; 
+                camera.position.set(38, 30, 38);
+            }
+            camera.updateProjectionMatrix();
+        }
+        
+        adjustCamera();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            adjustCamera(); 
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 10. ANIMASI RENDER LOOP
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

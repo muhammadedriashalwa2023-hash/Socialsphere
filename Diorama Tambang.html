@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Diorama: Tampak Tambang (Clean & Transparent)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            /* Membuat latar belakang HTML transparan */
+            background-color: transparent; 
+            user-select: none; 
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // 1. SETUP DASAR
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        // Latar belakang scene diatur kosong agar transparan
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+
+        // Mengaktifkan alpha: true agar background canvas transparan
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000, 0); // Nilai 0 berarti transparan penuh
+        renderer.shadowMap.enabled = true; 
+        container.appendChild(renderer.domElement);
+
+        // 2. PENCAHAYAAN
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, 40, 20);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -25;
+        dirLight.shadow.camera.right = 25;
+        dirLight.shadow.camera.top = 25;
+        dirLight.shadow.camera.bottom = -25;
+        scene.add(dirLight);
+
+        // 3. MATERIAL & TEKSTUR WARNA
+        const materials = {
+            grass: new THREE.MeshLambertMaterial({ color: 0x55aa55 }),
+            dirt: new THREE.MeshLambertMaterial({ color: 0x6b4423 }),
+            dryDirt: new THREE.MeshLambertMaterial({ color: 0xaa8855 }),
+            mud: new THREE.MeshLambertMaterial({ color: 0x3d2b1f }),
+            stone: new THREE.MeshLambertMaterial({ color: 0x777777 }),
+            wood: new THREE.MeshLambertMaterial({ color: 0x4a3018 }),
+            leaf: new THREE.MeshLambertMaterial({ color: 0x2d6a2d })
+        };
+
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+
+        // Fungsi untuk menambahkan blok ke scene
+        function addBlock(x, y, z, material) {
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            
+            // Tambahkan garis tepi (outline) minecraft
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.15, transparent: true }));
+            mesh.add(line);
+
+            scene.add(mesh);
+        }
+
+        // Fungsi membuat pohon sehat
+        function buildTree(x, y, z) {
+            for(let i=0; i<3; i++) addBlock(x, y+i, z, materials.wood); 
+            for(let lx=-1; lx<=1; lx++) { 
+                for(let ly=2; ly<=3; ly++) {
+                    for(let lz=-1; lz<=1; lz++) {
+                        if(ly===3 && (lx!==0 || lz!==0)) {
+                            if(Math.random() > 0.5) continue;
+                        }
+                        addBlock(x+lx, y+ly, z+lz, materials.leaf);
+                    }
+                }
+            }
+        }
+
+        // 4. GENERASI LANSKAP (Grid 20x20)
+        const size = 10; 
+
+        for (let x = -size; x <= size; x++) {
+            for (let z = -size; z <= size; z++) {
+                
+                const isDamagedArea = x > 0;
+                let surfaceY = 0;
+
+                if (isDamagedArea) {
+                    if (Math.random() > 0.6) {
+                        surfaceY = -Math.floor(Math.random() * 3) - 1; 
+                    }
+                }
+
+                for (let y = -4; y <= surfaceY; y++) {
+                    let mat = materials.stone; 
+
+                    if (y === surfaceY) {
+                        if (isDamagedArea) mat = (y < -1) ? materials.mud : materials.dryDirt;
+                        else mat = materials.grass;
+                    } else if (y > -3) {
+                        mat = materials.dirt;
+                    }
+                    addBlock(x, y, z, mat);
+                }
+
+                if (isDamagedArea) {
+                    if (surfaceY === 0 && Math.random() > 0.85) {
+                        const isRock = Math.random() > 0.5;
+                        addBlock(x, surfaceY + 1, z, isRock ? materials.stone : materials.wood);
+                    }
+                } else {
+                    if (Math.random() > 0.9) {
+                        if(x < -1 && x > -size+1 && z > -size+1 && z < size-1) {
+                            buildTree(x, surfaceY + 1, z);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. RENDER LOOP DENGAN AUTO-ROTATE KANAN-KIRI (Responsif)
+        let angle = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Kecepatan putar dinaikkan 5% (dari 0.003 menjadi 0.00315)
+            angle += 0.00315; 
+
+            // Cek rasio layar saat ini
+            const aspect = window.innerWidth / window.innerHeight;
+            
+            // Atur jarak kamera default untuk layar lebar (Desktop)
+            let radius = 32; 
+            let camHeight = 18; 
+
+            // Jika layar lebih sempit/potret (Mobile), jauhkan kamera
+            if (aspect < 1) {
+                radius = 48;
+                camHeight = 28;
+            }
+
+            // Posisi kamera melingkar
+            camera.position.x = radius * Math.sin(angle);
+            camera.position.z = radius * Math.cos(angle);
+            camera.position.y = camHeight;
+            
+            camera.lookAt(0, 0, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // 6. RESPONSIVE RESIZE
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
