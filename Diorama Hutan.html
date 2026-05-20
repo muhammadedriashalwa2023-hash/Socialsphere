@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Landscape Hutan 3D Voxel</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: transparent; /* Memastikan background HTML transparan */
+        }
+        
+        /* Container 3D */
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Tempat 3D dirender -->
+    <div id="canvas-container"></div>
+
+    <!-- Import Library Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // 1. SETUP SCENE, CAMERA, RENDERER
+        const scene = new THREE.Scene();
+        // Latar belakang dan fog dihapus agar transparan
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+        // Renderer diatur dengan alpha: true agar transparan
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        // Mengatur clear color menjadi transparan murni
+        renderer.setClearColor(0x000000, 0); 
+        renderer.shadowMap.enabled = true; 
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // 2. PENCAHAYAAN (LIGHTING)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(20, 30, -10);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
+        scene.add(dirLight);
+
+        // 3. MATERIAL & GEOMETRI BLOK (GAYA VOXEL)
+        const blockSize = 1;
+        const geometry = new THREE.BoxGeometry(blockSize, blockSize, blockSize);
+
+        const matGrass = new THREE.MeshStandardMaterial({ color: 0x55aa55, roughness: 0.8 });
+        const matDirt = new THREE.MeshStandardMaterial({ color: 0x6b5428, roughness: 0.9 });
+        const matWood = new THREE.MeshStandardMaterial({ color: 0x4a3b22, roughness: 0.9 });
+        const matLeaves = new THREE.MeshStandardMaterial({ color: 0x3d8c40, roughness: 1.0 });
+
+        function createBlock(x, y, z, material) {
+            const block = new THREE.Mesh(geometry, material);
+            block.position.set(x, y, z);
+            block.castShadow = true;
+            block.receiveShadow = true;
+            
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.1 }));
+            block.add(line);
+            
+            scene.add(block);
+        }
+
+        // 4. MEMBANGUN LANDSCAPE (TANAH)
+        const mapSize = 16; 
+        const offset = mapSize / 2;
+
+        for (let x = 0; x < mapSize; x++) {
+            for (let z = 0; z < mapSize; z++) {
+                createBlock(x - offset, -1, z - offset, matDirt);
+                createBlock(x - offset, -2, z - offset, matDirt);
+                createBlock(x - offset, 0, z - offset, matGrass);
+            }
+        }
+
+        // 5. MEMBANGUN PEPOHONAN
+        function createTree(baseX, baseZ) {
+            const trunkHeight = Math.floor(Math.random() * 2) + 3;
+
+            for (let y = 1; y <= trunkHeight; y++) {
+                createBlock(baseX, y, baseZ, matWood);
+            }
+
+            for (let lx = -1; lx <= 1; lx++) {
+                for (let ly = 0; ly <= 2; ly++) {
+                    for (let lz = -1; lz <= 1; lz++) {
+                        if (Math.abs(lx) === 1 && Math.abs(lz) === 1 && (ly === 0 || ly === 2)) continue;
+                        createBlock(baseX + lx, trunkHeight + ly, baseZ + lz, matLeaves);
+                    }
+                }
+            }
+        }
+
+        const jumlahPohon = 8;
+        for(let i = 0; i < jumlahPohon; i++) {
+            const tx = Math.floor(Math.random() * (mapSize - 4)) - (offset - 2);
+            const tz = Math.floor(Math.random() * (mapSize - 4)) - (offset - 2);
+            createTree(tx, tz);
+        }
+
+        // 6. ANIMASI KAMERA BERPUTAR
+        let angle = 0;
+        const radius = 22; 
+        const tinggiKamera = 12; 
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Kecepatan putar ditambah 5% (dari 0.003 menjadi 0.00315)
+            angle += 0.00315; 
+
+            camera.position.x = radius * Math.sin(angle);
+            camera.position.z = radius * Math.cos(angle);
+            camera.position.y = tinggiKamera;
+
+            camera.lookAt(0, 0, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
